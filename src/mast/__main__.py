@@ -85,7 +85,7 @@ def main() -> None:
 
     from mast.server import run_server
 
-    run_server()  # FastMCP handles its own event loop
+    asyncio.run(run_server())
 
 
 if __name__ == "__main__":
