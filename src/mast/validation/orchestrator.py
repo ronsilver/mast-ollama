@@ -1,4 +1,5 @@
 """Validation orchestrator — assembles Critic + Judge based on mode."""
+
 from __future__ import annotations
 
 import hashlib
@@ -93,9 +94,7 @@ class ValidationOrchestrator:
             log.info("validation_skipped_short_thought", trace_id=trace_id)
             return base
 
-        cache_key = _cache_key(
-            thought.thought, config.critic_model, config.judge_model, mode
-        )
+        cache_key = _cache_key(thought.thought, config.critic_model, config.judge_model, mode)
         cached = self._cache.get(cache_key)
         if cached is not None:
             log.info("validation_cache_hit", trace_id=trace_id)

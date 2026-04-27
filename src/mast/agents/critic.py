@@ -1,4 +1,5 @@
 """Critic agent — challenges a thought and returns structured issues."""
+
 from __future__ import annotations
 
 import jinja2

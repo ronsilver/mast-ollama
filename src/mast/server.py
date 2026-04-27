@@ -1,4 +1,5 @@
 """MCP server using FastMCP — registers sequentialthinking and mast_debate tools."""
+
 from __future__ import annotations
 
 import json
@@ -57,6 +58,7 @@ async def _handle_thought(
         formatted = _upstream.format_thought(thought_obj)
         if formatted:
             import sys
+
             print(formatted, file=sys.stderr, flush=True)
 
     if parsed.skip_validation or mode == "passive":

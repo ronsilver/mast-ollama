@@ -4,6 +4,7 @@ Reference: https://github.com/modelcontextprotocol/servers/tree/main/src/sequent
 This module must not contain any MAST-specific logic. Keep it as a faithful
 translation so upstream changes can be ported here in isolation.
 """
+
 from __future__ import annotations
 
 import json
@@ -129,8 +130,7 @@ class SequentialThinkingServer:
                 ],
                 "branches": {
                     bid: [
-                        {"thought": t.thought, "thoughtNumber": t.thought_number}
-                        for t in thoughts
+                        {"thought": t.thought, "thoughtNumber": t.thought_number} for t in thoughts
                     ]
                     for bid, thoughts in self.branches.items()
                 },

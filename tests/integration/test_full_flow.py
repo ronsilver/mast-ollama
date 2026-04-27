@@ -1,7 +1,9 @@
 """Integration tests for the full MCP flow with Ollama mocked via respx."""
+
 from __future__ import annotations
 
 import json
+from collections.abc import Generator
 
 import httpx
 import pytest
@@ -13,24 +15,32 @@ from mast.agents.critic import CriticAgent
 from mast.agents.judge import JudgeAgent
 from mast.validation.schemas import Verdict
 
-CRITIC_JSON = json.dumps({
-    "issues": [
-        {"severity": "medium", "type": "assumption", "detail": "Assumes Redis is always available"}
-    ],
-    "strengths": ["Clear scope definition"],
-    "summary": "One assumption issue",
-})
+CRITIC_JSON = json.dumps(
+    {
+        "issues": [
+            {
+                "severity": "medium",
+                "type": "assumption",
+                "detail": "Assumes Redis is always available",
+            }
+        ],
+        "strengths": ["Clear scope definition"],
+        "summary": "One assumption issue",
+    }
+)
 
-JUDGE_JSON = json.dumps({
-    "verdict": "revise",
-    "confidence": 0.8,
-    "rationale": "Assumption about Redis needs to be addressed",
-    "suggestedRevision": "Use Redis with fallback to in-memory cache for resilience",
-})
+JUDGE_JSON = json.dumps(
+    {
+        "verdict": "revise",
+        "confidence": 0.8,
+        "rationale": "Assumption about Redis needs to be addressed",
+        "suggestedRevision": "Use Redis with fallback to in-memory cache for resilience",
+    }
+)
 
 
 @pytest.fixture
-def mock_ollama() -> respx.MockRouter:
+def mock_ollama() -> Generator[respx.MockRouter, None, None]:
     with respx.mock(base_url="http://localhost:11434") as mock:
         yield mock
 
@@ -40,7 +50,7 @@ def ollama_client() -> OllamaClient:
     return OllamaClient()
 
 
-def _mock_chat_response(content: str) -> dict:
+def _mock_chat_response(content: str) -> dict[str, object]:
     return {
         "model": "test-model",
         "message": {"role": "assistant", "content": content},

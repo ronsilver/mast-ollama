@@ -1,4 +1,5 @@
 """Pydantic schemas for MAST validation pipeline."""
+
 from __future__ import annotations
 
 from enum import StrEnum

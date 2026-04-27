@@ -1,4 +1,5 @@
 """Configuration via environment variables with Pydantic v2."""
+
 from __future__ import annotations
 
 from pydantic import Field, field_validator

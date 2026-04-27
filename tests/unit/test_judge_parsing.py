@@ -1,4 +1,5 @@
 """Unit tests for Judge response parsing."""
+
 from __future__ import annotations
 
 import pytest

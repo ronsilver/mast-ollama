@@ -1,4 +1,5 @@
 """Unit tests for upstream parity (passive mode = identical to upstream)."""
+
 from __future__ import annotations
 
 import pytest

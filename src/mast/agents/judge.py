@@ -1,4 +1,5 @@
 """Judge agent — synthesizes thought + critique into a verdict."""
+
 from __future__ import annotations
 
 import json
