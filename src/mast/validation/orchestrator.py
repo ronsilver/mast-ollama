@@ -1,4 +1,5 @@
 """Validation orchestrator — assembles Critic + Judge based on mode."""
+
 from __future__ import annotations
 
 import hashlib
@@ -18,18 +19,15 @@ from mast.validation.schemas import (
 
 log = structlog.get_logger(__name__)
 
-_SKIP_THRESHOLD_CHARS = 20  # thoughts shorter than this are skipped
-
 
 def _build_history_summary(
     history: list[ThoughtData],
     window: int,
     max_tokens: int,
 ) -> str:
-    """
-    Compress history to a string:
-    - Last `window` thoughts shown in full.
-    - Older ones compressed to one line each.
+    """Compress history to a string for the prompt context.
+
+    Last `window` thoughts shown in full; older ones compressed to one line each.
     Total capped at ~max_tokens (estimated by chars/4).
     """
     max_chars = max_tokens * 4
@@ -53,8 +51,15 @@ def _build_history_summary(
     return summary
 
 
-def _cache_key(thought: str, critic_model: str, judge_model: str, mode: str) -> str:
-    payload = f"{thought}|{critic_model}|{judge_model}|{mode}"
+def _cache_key(
+    thought: str,
+    critic_model: str,
+    judge_model: str,
+    mode: str,
+    history_summary: str,
+    branch_id: str | None,
+) -> str:
+    payload = f"{thought}|{critic_model}|{judge_model}|{mode}|{history_summary}|{branch_id}"
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
@@ -76,7 +81,13 @@ class ValidationOrchestrator:
         upstream_response: dict[str, object],
         mode: str,
         trace_id: str,
+        *,
+        critic_model: str | None = None,
+        judge_model: str | None = None,
     ) -> MastOutput:
+        effective_critic = critic_model or config.critic_model
+        effective_judge = judge_model or config.judge_model
+
         base = MastOutput(
             thought_number=upstream_response["thoughtNumber"],  # type: ignore[arg-type]
             total_thoughts=upstream_response["totalThoughts"],  # type: ignore[arg-type]
@@ -88,24 +99,28 @@ class ValidationOrchestrator:
         if mode == "passive":
             return base
 
-        # Skip very short / meta thoughts
-        if len(thought.thought.strip()) < _SKIP_THRESHOLD_CHARS:
+        if len(thought.thought.strip()) < config.mast_skip_threshold_chars:
             log.info("validation_skipped_short_thought", trace_id=trace_id)
             return base
-
-        cache_key = _cache_key(
-            thought.thought, config.critic_model, config.judge_model, mode
-        )
-        cached = self._cache.get(cache_key)
-        if cached is not None:
-            log.info("validation_cache_hit", trace_id=trace_id)
-            return cached
 
         history_summary = _build_history_summary(
             history,
             window=config.mast_history_window,
             max_tokens=config.mast_history_max_tokens,
         )
+
+        cache_key = _cache_key(
+            thought.thought,
+            effective_critic,
+            effective_judge,
+            mode,
+            history_summary,
+            thought.branch_id,
+        )
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            log.info("validation_cache_hit", trace_id=trace_id)
+            return cached
 
         # --- Critic ---
         critic_response, critic_latency = await self._critic.critique(
@@ -117,6 +132,7 @@ class ValidationOrchestrator:
             revises_thought=thought.revises_thought,
             branch_id=thought.branch_id,
             branch_from=thought.branch_from_thought,
+            model=effective_critic,
         )
 
         log.info(
@@ -125,12 +141,13 @@ class ValidationOrchestrator:
             thought_number=thought.thought_number,
             issues=len(critic_response.issues),
             latency_ms=critic_latency,
+            model=effective_critic,
         )
 
         validation = ValidationResult(
             issues=critic_response.issues,
             strengths=critic_response.strengths,
-            critic_model=config.critic_model,
+            critic_model=effective_critic,
             critic_latency_ms=critic_latency,
         )
         base.validation = validation
@@ -147,6 +164,8 @@ class ValidationOrchestrator:
             history_summary=history_summary,
             critique=critic_response,
             mode=mode,
+            is_revision=thought.is_revision,
+            model=effective_judge,
         )
 
         log.info(
@@ -156,12 +175,13 @@ class ValidationOrchestrator:
             verdict=judge_response.verdict,
             confidence=judge_response.confidence,
             latency_ms=judge_latency,
+            model=effective_judge,
         )
 
         base.verdict = judge_response.verdict
         base.confidence = judge_response.confidence
         base.suggested_revision = judge_response.suggested_revision
-        base.judge_model = config.judge_model
+        base.judge_model = effective_judge
         base.judge_latency_ms = judge_latency
 
         self._cache.set(cache_key, base)

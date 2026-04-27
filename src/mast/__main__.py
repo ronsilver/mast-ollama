@@ -1,4 +1,5 @@
 """Entry point: python -m mast or mast-server CLI command."""
+
 from __future__ import annotations
 
 import asyncio
@@ -11,6 +12,7 @@ from mast.config import config
 
 def _configure_logging() -> None:
     import logging
+
     structlog.configure(
         processors=[
             structlog.stdlib.filter_by_level,
@@ -82,7 +84,8 @@ def main() -> None:
         return
 
     from mast.server import run_server
-    run_server()  # FastMCP handles its own event loop
+
+    asyncio.run(run_server())
 
 
 if __name__ == "__main__":
