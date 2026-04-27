@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -66,18 +66,25 @@ class IssueType(StrEnum):
     ASSUMPTION = "assumption"
     FACTUAL = "factual"
     SCOPE = "scope"
+    CONSISTENCY = "consistency"
+    COMPLETENESS = "completeness"
 
 
 class CriticIssue(BaseModel):
     severity: IssueSeverity
     type: IssueType
-    detail: str
+    detail: str = Field(max_length=300)
+    evidence: str | None = Field(default=None, max_length=120)
+    refs: list[str] = Field(default_factory=list)
 
 
 class CriticResponse(BaseModel):
     issues: list[CriticIssue] = Field(default_factory=list)
-    strengths: list[str] = Field(default_factory=list)
-    summary: str = ""
+    strengths: list[str] = Field(default_factory=list, max_length=3)
+    summary: str = Field(default="", max_length=120)
+    hardest_issue: str | None = Field(default=None, alias="hardestIssue")
+
+    model_config = {"populate_by_name": True}
 
 
 class Verdict(StrEnum):
@@ -89,8 +96,12 @@ class Verdict(StrEnum):
 class JudgeResponse(BaseModel):
     verdict: Verdict
     confidence: float
-    rationale: str
-    suggested_revision: str | None = Field(default=None, alias="suggestedRevision")
+    rationale: str = Field(max_length=240)
+    suggested_revision: str | None = Field(default=None, alias="suggestedRevision", max_length=600)
+    suggested_revision_mode: Literal["rewrite", "patch"] | None = Field(
+        default=None, alias="suggestedRevisionMode"
+    )
+    evidence_seen: list[str] = Field(default_factory=list, alias="evidenceSeen")
 
     model_config = {"populate_by_name": True}
 
