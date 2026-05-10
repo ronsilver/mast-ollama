@@ -1,12 +1,27 @@
-# MAST-Ollama
+# MAST-Ollama [![Codacy Badge](https://app.codacy.com/project/badge/Grade/e1b069af215841d4a31e123bc782121f)](https://app.codacy.com/gh/ronsilver/mast-ollama/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 
 **Multi-Agent Sequential Thinking with Ollama** — Active validation layer for the [MCP sequential-thinking](https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking) server.
 
-Drop-in Python replacement that challenges each reasoning step with local Ollama models before returning the result to the calling LLM.
+Drop-in Python replacement that challenges each reasoning step with local or cloud Ollama models before returning the result to the calling LLM.
 
 Available validation strategies:
 - **Adversarial Debate** (modes: `validate`, `debate`): a Critic identifies flaws, a Judge synthesizes a verdict
 - **De Bono Six Thinking Hats** (mode: `debono`): 7 sequential hats refine a working document through facts, creativity, benefits, risks, and intuition into a final verdict
+
+## Table of Contents
+
+- [Why](#why)
+- [Quick Start](#quick-start)
+- [MCP Client Configuration](#mcp-client-configuration)
+- [Ollama Cloud](#ollama-cloud)
+- [Modes](#modes)
+- [Tools](#tools)
+- [De Bono Six Hats Mode](#de-bono-six-hats-mode)
+- [Environment Variables](#environment-variables)
+- [Architecture](#architecture)
+- [Development](#development)
+- [Changelog](#changelog)
+- [License](#license)
 
 ## Why
 
@@ -45,67 +60,9 @@ mast-server --doctor
 
 Checks Ollama connectivity and validates that all models configured via env vars are pulled and available.
 
-## Ollama Cloud
-
-MAST supports both local Ollama and [Ollama Cloud](https://ollama.com/pricing). Two access modes:
-
-### A) Direct Cloud API (programmatic)
-
-Connect directly to `https://ollama.com/api` with an API key:
-
-```bash
-OLLAMA_BASE_URL=https://ollama.com/api \
-OLLAMA_CLOUD_API_KEY=sk-xxx \
-CRITIC_MODEL=mistral:7b-instruct \
-mast-server
-```
-
-API keys are created at [ollama.com/settings/keys](https://ollama.com/settings/keys).
-
-### B) Local Proxy (after `ollama signin`)
-
-Authenticate locally, then add `-cloud` suffix to model names:
-
-```bash
-ollama signin
-# then use normal OLLAMA_BASE_URL + cloud-tagged model names
-DEBONO_WHITE_MODEL=qwen2.5:3b-cloud mast-server
-```
-
-The local Ollama instance proxies to cloud transparently.
-
-### Cloud configuration examples
-
-**Debate mode:**
-
-```json
-{
-  "env": {
-    "OLLAMA_BASE_URL": "https://ollama.com/api",
-    "OLLAMA_CLOUD_API_KEY": "sk-xxx",
-    "CRITIC_MODEL": "mistral:7b-instruct",
-    "JUDGE_MODEL": "deepseek-r1:8b",
-    "MAST_MODE": "debate"
-  }
-}
-```
-
-**Debono mode:**
-
-```json
-{
-  "env": {
-    "OLLAMA_BASE_URL": "https://ollama.com/api",
-    "OLLAMA_CLOUD_API_KEY": "sk-xxx",
-    "MAST_MODE": "debono",
-    "DEBONO_BLUE_OPEN_MODEL": "qwen2.5:3b"
-  }
-}
-```
-
 ## MCP Client Configuration
 
-Add to your MCP client config (`claude_desktop_config.json`, `~/.cursor/mcp.json`, `.vscode/mcp.json`, etc.):
+Add to your MCP client config (`claude_desktop_config.json`, `~/.cursor/mcp.json`, `.vscode/mcp.json`, etc.). Works with any MCP-compatible agent: Claude Desktop, Cursor, VS Code, Continue, and others.
 
 ### Debate strategy (Critic + Judge)
 
@@ -156,7 +113,58 @@ Add to your MCP client config (`claude_desktop_config.json`, `~/.cursor/mcp.json
 }
 ```
 
-Works with any MCP-compatible agent: Claude Desktop, Cursor, VS Code, Continue, and others.
+## Ollama Cloud
+
+MAST supports both local Ollama and [Ollama Cloud](https://ollama.com/pricing). Two access modes:
+
+### A) Direct Cloud API
+
+Connect directly to `https://ollama.com/api` with an API key:
+
+```bash
+OLLAMA_BASE_URL=https://ollama.com/api \
+OLLAMA_CLOUD_API_KEY=sk-xxx \
+CRITIC_MODEL=mistral:7b-instruct \
+mast-server
+```
+
+API keys are created at [ollama.com/settings/keys](https://ollama.com/settings/keys).
+
+### B) Local Proxy
+
+Authenticate locally, then add `-cloud` suffix to model names:
+
+```bash
+ollama signin
+DEBONO_WHITE_MODEL=qwen2.5:3b-cloud mast-server
+```
+
+The local Ollama instance proxies to cloud transparently.
+
+### Cloud configuration examples
+
+```json
+// Debate mode
+{
+  "env": {
+    "OLLAMA_BASE_URL": "https://ollama.com/api",
+    "OLLAMA_CLOUD_API_KEY": "sk-xxx",
+    "CRITIC_MODEL": "mistral:7b-instruct",
+    "JUDGE_MODEL": "deepseek-r1:8b",
+    "MAST_MODE": "debate"
+  }
+}
+
+// Debono mode
+{
+  "env": {
+    "OLLAMA_BASE_URL": "https://ollama.com/api",
+    "OLLAMA_CLOUD_API_KEY": "sk-xxx",
+    "MAST_MODE": "debono",
+    "DEBONO_BLUE_OPEN_MODEL": "qwen2.5:3b"
+  }
+}
+```
 
 ## Modes
 
@@ -242,29 +250,6 @@ Red hat can be disabled entirely by setting `DEBONO_SKIP_RED=true`.
 | `DEBONO_BLUE_CLOSE_MODEL` | `qwen2.5:3b` | Blue Close hat model |
 | `DEBONO_SKIP_RED` | `false` | Skip Red hat entirely |
 
-## Development
-
-```bash
-uv venv
-source .venv/bin/activate
-uv sync --extra dev
-
-# Run all tests
-make test
-
-# Lint and type check
-make lint
-make format
-make typecheck
-
-# Full check (lint + format + type + test)
-make check
-```
-
-## Changelog
-
-See [CHANGELOG.md](CHANGELOG.md) for release history.
-
 ## Architecture
 
 ```
@@ -295,6 +280,32 @@ LLM Client → MCP sequentialthinking tool
                       ├── red.md
                       └── blue_close.md
 ```
+
+## Development
+
+```bash
+uv venv
+source .venv/bin/activate
+uv sync --extra dev
+
+# Run all tests
+make test
+
+# Test coverage (terminal + HTML report)
+make coverage
+
+# Lint and type check
+make lint
+make format
+make typecheck
+
+# Full check (lint + format + type + test)
+make check
+```
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## License
 
