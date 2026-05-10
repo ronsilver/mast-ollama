@@ -1,3 +1,4 @@
+// eslint-disable-next-line no-alert
 # MAST-Ollama Agent Architecture
 
 ## Project Overview
@@ -29,22 +30,19 @@ These apply to all work on this project.
 Before declaring any task complete:
 
 ```bash
-make lint && make format && make typecheck && make test
+make check
 ```
 
 If any step fails, fix before proceeding.
 
-### Pre-commit Conventions
-
-- Format with `ruff format` before committing.
-- Write commit messages in conventional format: `type(scope): description`.
-- Update **README.md** and **CHANGELOG.md** when adding features, changing env vars, or altering architecture.
-- Changelog follows [Keep a Changelog](https://keepachangelog.com/) format under `[Unreleased]`.
-
 ### Permission Boundaries
 
 - **Code changes:** Agent may implement after confirming scope with user (T0 reversible) or after explicit approval (T2+ irreversible).
-- **Configuration changes:** Env vars, CI config, dependency changes — confirm with user before writing.
+- **Configuration changes:**
+  - Environment vars
+  - Continuous Integration (CI) config
+  - dependency changes
+  - confirm with user before writing.
 - **Deploy/release:** Never push to remote — output the push command for the user to run.
 
 ---
@@ -155,49 +153,12 @@ The pipeline executes sequentially: each hat receives the previous hat's `workin
 
 ---
 
-## Tools
-
-| Command | Action |
-|---|---|
-| `make test` | Run all tests (128 unit + integration) |
-| `make lint` | Ruff check on `src/ tests/ evals/` |
-| `make typecheck` | Mypy strict mode on `src/ tests/` |
-| `make format` | Ruff format check (use `ruff format` to fix) |
-| `make coverage` | Test with coverage report (html + terminal) |
-| `make doctor` | Validate Ollama connectivity + model availability |
-| `make mdlint` | Markdown lint on `*.md docs/*.md` |
-| `make check` | Full pre-commit: lint + format + typecheck + test |
-
----
-
-## Memory
-
-The following rules ensure context survives between sessions.
-
 ### Start of Session
 
 1. Read `AGENTS.md` (this file) for roles and conventions.
 2. Read `CHANGELOG.md` for recent changes.
 3. Read `README.md` for project overview and env vars.
 4. Read the `docs/` directory for any active ADRs or decisions.
-
-### Persistence Rules
-
-- **Write it down.** Mental notes don't survive restarts.
-- Save decisions, user preferences, and non-obvious context to `docs/decisions/` (ADR format) or `progress.txt` (session state).
-- Before marking a task done, externalize: state blocker, next step, evidence tier.
-
-### Handoff Protocol
-
-When a session ends, leave `progress.txt` with:
-
-```text
-## Blocker
-## Evidence Tier
-## Next Step
-```
-
-When a session starts, check for `progress.txt`. If found, read it to restore context, then archive to `docs/archived-progress/`.
 
 ---
 

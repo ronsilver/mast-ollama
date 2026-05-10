@@ -1,3 +1,4 @@
+<!-- markdownlint-disable -->
 ---
 version: 2.0.0
 agent: critic

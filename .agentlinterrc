@@ -1,0 +1,7 @@
+{
+  "extends": "agentlinter:recommended",
+  "rules": {
+    "structure/modular-files": "off"
+  },
+  "ignore": [".git", ".venv"]
+}
