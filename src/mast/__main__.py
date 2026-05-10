@@ -31,6 +31,50 @@ def _configure_logging() -> None:
     )
 
 
+def _collect_configured_models() -> list[str]:
+    """Return all configured model names based on current MAST_MODE."""
+    configured: list[str] = [config.critic_model, config.judge_model]
+    if config.mast_mode == "debono":
+        configured.extend(
+            [
+                config.debono_blue_open_model,
+                config.debono_white_model,
+                config.debono_green_model,
+                config.debono_yellow_model,
+                config.debono_black_model,
+            ]
+        )
+        if not config.debono_skip_red:
+            configured.append(config.debono_red_model)
+        configured.append(config.debono_blue_close_model)
+    return configured
+
+
+def _print_model_list(models: list[str]) -> None:
+    """Print available models with role tags (CRITIC, JUDGE, DEBONO)."""
+    print(f"✅ Reachable. Available models ({len(models)}):", flush=True)
+    for m in models:
+        tags = []
+        if m == config.critic_model:
+            tags.append("CRITIC")
+        if m == config.judge_model:
+            tags.append("JUDGE")
+        debono_models = {
+            config.debono_blue_open_model,
+            config.debono_white_model,
+            config.debono_green_model,
+            config.debono_yellow_model,
+            config.debono_black_model,
+        }
+        if not config.debono_skip_red:
+            debono_models.add(config.debono_red_model)
+        debono_models.add(config.debono_blue_close_model)
+        if m in debono_models:
+            tags.append("DEBONO")
+        suffix = f" ← {' | '.join(tags)}" if tags else ""
+        print(f"  • {m}{suffix}", flush=True)
+
+
 async def _doctor() -> None:
     """Validate Ollama connectivity and model availability."""
     from mast.agents.base import OllamaClient
@@ -55,44 +99,9 @@ async def _doctor() -> None:
             print("❌ Cannot reach Ollama — is it running?", flush=True)
         sys.exit(1)
 
-    print(f"✅ Reachable. Available models ({len(models)}):", flush=True)
-    for m in models:
-        tags = []
-        if m == config.critic_model:
-            tags.append("CRITIC")
-        if m == config.judge_model:
-            tags.append("JUDGE")
-        debono_models = {
-            config.debono_blue_open_model,
-            config.debono_white_model,
-            config.debono_green_model,
-            config.debono_yellow_model,
-            config.debono_black_model,
-        }
-        if not config.debono_skip_red:
-            debono_models.add(config.debono_red_model)
-        debono_models.add(config.debono_blue_close_model)
-        if m in debono_models:
-            tags.append("DEBONO")
-        suffix = f" ← {' | '.join(tags)}" if tags else ""
-        print(f"  • {m}{suffix}", flush=True)
+    _print_model_list(models)
 
-    # Collect all configured models based on mode
-    configured: list[str] = [config.critic_model, config.judge_model]
-    if config.mast_mode == "debono":
-        configured.extend(
-            [
-                config.debono_blue_open_model,
-                config.debono_white_model,
-                config.debono_green_model,
-                config.debono_yellow_model,
-                config.debono_black_model,
-            ]
-        )
-        if not config.debono_skip_red:
-            configured.append(config.debono_red_model)
-        configured.append(config.debono_blue_close_model)
-
+    configured = _collect_configured_models()
     missing = [m for m in set(configured) if m not in models]
 
     if missing:
