@@ -13,6 +13,7 @@ from mast._upstream import SequentialThinkingServer
 from mast.agents.base import OllamaClient
 from mast.agents.critic import CriticAgent
 from mast.agents.judge import JudgeAgent
+from mast.config import config
 from mast.validation.schemas import Verdict
 
 CRITIC_JSON = json.dumps(
@@ -126,7 +127,6 @@ async def test_ollama_timeout_fallback(
         total_thoughts=1,
         history_summary="",
     )
-    # Fallback: empty issues, not an exception
     assert result.issues == []
     await ollama_client.aclose()
 
@@ -149,6 +149,37 @@ async def test_ollama_invalid_json_fallback(
     )
     assert result.issues == []
     await ollama_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_ollama_cloud_auth_header() -> None:
+    """When OLLAMA_CLOUD_API_KEY is set, Authorization header is sent."""
+    saved = config.ollama_cloud_api_key
+    config.ollama_cloud_api_key = "sk-test-key-for-auth"  # type: ignore[assignment]
+
+    from mast.agents.base import OllamaClient as CloudClient
+
+    client = CloudClient()
+
+    try:
+        with respx.mock(base_url="http://localhost:11434") as mock:
+            mock.post("/api/chat").mock(
+                return_value=httpx.Response(200, json=_mock_chat_response(CRITIC_JSON))
+            )
+            agent = CriticAgent(client)
+            result, _ = await agent.critique(
+                thought="Test cloud auth",
+                thought_number=1,
+                total_thoughts=1,
+                history_summary="",
+            )
+            assert len(result.issues) == 1
+            assert mock.calls.last is not None
+            request = mock.calls.last.request
+            assert request.headers.get("Authorization") == "Bearer sk-test-key-for-auth"
+    finally:
+        await client.aclose()
+        config.ollama_cloud_api_key = saved
 
 
 def test_upstream_server_concurrent_thoughts() -> None:

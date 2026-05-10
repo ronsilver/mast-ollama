@@ -44,3 +44,13 @@ def test_ollama_timeout_converts_ms_to_seconds() -> None:
 def test_color_thought_logging_default_false() -> None:
     cfg = MastConfig()
     assert cfg.color_thought_logging is False
+
+
+def test_ollama_cloud_api_key_default_none() -> None:
+    cfg = MastConfig()
+    assert cfg.ollama_cloud_api_key is None
+
+
+def test_ollama_cloud_api_key_from_env() -> None:
+    cfg = MastConfig(**{"OLLAMA_CLOUD_API_KEY": "sk-test-key"})  # type: ignore[arg-type]
+    assert cfg.ollama_cloud_api_key == "sk-test-key"

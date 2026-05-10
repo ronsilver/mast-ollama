@@ -36,44 +36,79 @@ async def _doctor() -> None:
     from mast.agents.base import OllamaClient
 
     client = OllamaClient()
+    is_cloud = config.ollama_cloud_api_key is not None
+    env_label = "☁️  Cloud" if is_cloud else "🏠 Local"
+
     print("🩺 MAST Doctor", flush=True)
-    print(f"  Ollama URL : {config.ollama_base_url}", flush=True)
-    print(f"  Critic     : {config.critic_model}", flush=True)
-    print(f"  Judge      : {config.judge_model}", flush=True)
-    print(f"  Mode       : {config.mast_mode}", flush=True)
+    print(f"  Environment : {env_label}", flush=True)
+    print(f"  Ollama URL  : {config.ollama_base_url}", flush=True)
+    print(f"  Mode        : {config.mast_mode}", flush=True)
     print("", flush=True)
 
     models = await client.list_models()
     await client.aclose()
 
     if not models:
-        print("❌ Cannot reach Ollama — is it running?", flush=True)
+        if is_cloud:
+            print("❌ Cannot reach Ollama Cloud — check OLLAMA_BASE_URL and API key", flush=True)
+        else:
+            print("❌ Cannot reach Ollama — is it running?", flush=True)
         sys.exit(1)
 
-    print(f"✅ Ollama reachable. Available models ({len(models)}):", flush=True)
+    print(f"✅ Reachable. Available models ({len(models)}):", flush=True)
     for m in models:
-        tag = ""
+        tags = []
         if m == config.critic_model:
-            tag = " ← CRITIC"
-        elif m == config.judge_model:
-            tag = " ← JUDGE"
-        print(f"  • {m}{tag}", flush=True)
+            tags.append("CRITIC")
+        if m == config.judge_model:
+            tags.append("JUDGE")
+        debono_models = {
+            config.debono_blue_open_model,
+            config.debono_white_model,
+            config.debono_green_model,
+            config.debono_yellow_model,
+            config.debono_black_model,
+        }
+        if not config.debono_skip_red:
+            debono_models.add(config.debono_red_model)
+        debono_models.add(config.debono_blue_close_model)
+        if m in debono_models:
+            tags.append("DEBONO")
+        suffix = f" ← {' | '.join(tags)}" if tags else ""
+        print(f"  • {m}{suffix}", flush=True)
 
-    missing: list[str] = []
-    if config.critic_model not in models:
-        missing.append(config.critic_model)
-    if config.judge_model not in models:
-        missing.append(config.judge_model)
+    # Collect all configured models based on mode
+    configured: list[str] = [config.critic_model, config.judge_model]
+    if config.mast_mode == "debono":
+        configured.extend(
+            [
+                config.debono_blue_open_model,
+                config.debono_white_model,
+                config.debono_green_model,
+                config.debono_yellow_model,
+                config.debono_black_model,
+            ]
+        )
+        if not config.debono_skip_red:
+            configured.append(config.debono_red_model)
+        configured.append(config.debono_blue_close_model)
+
+    missing = [m for m in set(configured) if m not in models]
 
     if missing:
         print("", flush=True)
-        print("⚠️  Missing models. Pull them with:", flush=True)
+        if is_cloud:
+            print(
+                "⚠️  Models not found on cloud. Check ollama.com/search?c=cloud:",
+                flush=True,
+            )
+        else:
+            print("⚠️  Missing models. Pull them with:", flush=True)
         for m in missing:
-            print(f"  ollama pull {m}", flush=True)
+            print(f"  {m}", flush=True)
         sys.exit(1)
-    else:
-        print("", flush=True)
-        print("✅ All required models present. Ready to run!", flush=True)
+    print("", flush=True)
+    print("✅ All required models available. Ready to run!", flush=True)
 
 
 def main() -> None:
