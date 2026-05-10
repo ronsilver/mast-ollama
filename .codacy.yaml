@@ -1,0 +1,17 @@
+---
+engines:
+  bandit:
+    exclude_paths:
+      - "tests/**"
+  remark-lint:
+    exclude_paths:
+      - "CHANGELOG.md"
+  prospector:
+    exclude_paths:
+      - "src/mast/agents/debono.py"
+      - "src/mast/validation/schemas.py"
+      - "evals/run_eval.py"
+
+exclude_paths:
+  - "uv.lock"
+  - "src/mast/prompts/**"

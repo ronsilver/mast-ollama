@@ -7,7 +7,7 @@ from typing import Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
-MastMode = Literal["passive", "validate", "debate"]
+MastMode = Literal["passive", "validate", "debate", "debono"]
 FormatMode = Literal["schema", "json", "text"]
 
 
@@ -19,6 +19,7 @@ class MastConfig(BaseSettings):
         default="http://localhost:11434",
         alias="OLLAMA_BASE_URL",
     )
+    ollama_cloud_api_key: str | None = Field(default=None, alias="OLLAMA_CLOUD_API_KEY")
     critic_model: str = Field(default="mistral:7b-instruct", alias="CRITIC_MODEL")
     judge_model: str = Field(default="deepseek-r1:8b", alias="JUDGE_MODEL")
 
@@ -46,6 +47,16 @@ class MastConfig(BaseSettings):
     # ANSI colours in format_thought console output
     color_thought_logging: bool = Field(default=False, alias="MAST_COLOR_THOUGHTS")
 
+    # De Bono Six Hats — one env var per hat
+    debono_blue_open_model: str = Field(default="qwen2.5:3b", alias="DEBONO_BLUE_OPEN_MODEL")
+    debono_white_model: str = Field(default="qwen2.5:3b", alias="DEBONO_WHITE_MODEL")
+    debono_green_model: str = Field(default="qwen2.5:1.5b", alias="DEBONO_GREEN_MODEL")
+    debono_yellow_model: str = Field(default="qwen2.5:3b", alias="DEBONO_YELLOW_MODEL")
+    debono_black_model: str = Field(default="qwen2.5:3b", alias="DEBONO_BLACK_MODEL")
+    debono_red_model: str = Field(default="qwen2.5:1.5b", alias="DEBONO_RED_MODEL")
+    debono_blue_close_model: str = Field(default="qwen2.5:3b", alias="DEBONO_BLUE_CLOSE_MODEL")
+    debono_skip_red: bool = Field(default=False, alias="DEBONO_SKIP_RED")
+
     # Logging
     mast_log_level: str = Field(default="INFO", alias="MAST_LOG_LEVEL")
 
@@ -60,7 +71,7 @@ class MastConfig(BaseSettings):
     @field_validator("mast_mode", mode="before")
     @classmethod
     def validate_mode(cls, v: str) -> str:
-        allowed = {"passive", "validate", "debate"}
+        allowed = {"passive", "validate", "debate", "debono"}
         if v not in allowed:
             raise ValueError(f"MAST_MODE must be one of {allowed}, got {v!r}")
         return v

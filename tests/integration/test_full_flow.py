@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Generator
+from typing import Any
 
 import httpx
 import pytest
@@ -13,6 +14,7 @@ from mast._upstream import SequentialThinkingServer
 from mast.agents.base import OllamaClient
 from mast.agents.critic import CriticAgent
 from mast.agents.judge import JudgeAgent
+from mast.config import config
 from mast.validation.schemas import Verdict
 
 CRITIC_JSON = json.dumps(
@@ -112,12 +114,13 @@ async def test_judge_agent_full_flow(
     await ollama_client.aclose()
 
 
-@pytest.mark.asyncio
-async def test_ollama_timeout_fallback(
-    mock_ollama: respx.MockRouter, ollama_client: OllamaClient
+async def _run_fallback_test(
+    mock_ollama: respx.MockRouter,
+    ollama_client: OllamaClient,
+    side_effect: Any,  # noqa: ANN401
 ) -> None:
-    """On timeout, agent should return fallback (not raise)."""
-    mock_ollama.post("/api/chat").mock(side_effect=httpx.TimeoutException("timeout"))
+    """Run a critique with a mock side_effect and assert fallback behavior."""
+    mock_ollama.post("/api/chat").mock(side_effect=side_effect)
 
     agent = CriticAgent(ollama_client)
     result, _ = await agent.critique(
@@ -126,9 +129,16 @@ async def test_ollama_timeout_fallback(
         total_thoughts=1,
         history_summary="",
     )
-    # Fallback: empty issues, not an exception
     assert result.issues == []
     await ollama_client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_ollama_timeout_fallback(
+    mock_ollama: respx.MockRouter, ollama_client: OllamaClient
+) -> None:
+    """On timeout, agent should return fallback (not raise)."""
+    await _run_fallback_test(mock_ollama, ollama_client, httpx.TimeoutException("timeout"))
 
 
 @pytest.mark.asyncio
@@ -136,19 +146,40 @@ async def test_ollama_invalid_json_fallback(
     mock_ollama: respx.MockRouter, ollama_client: OllamaClient
 ) -> None:
     """On non-JSON response, agent should return fallback."""
-    mock_ollama.post("/api/chat").mock(
-        return_value=httpx.Response(200, json=_mock_chat_response("not valid json at all"))
+    await _run_fallback_test(
+        mock_ollama,
+        ollama_client,
+        httpx.Response(200, json=_mock_chat_response("not valid json at all")),
     )
 
-    agent = CriticAgent(ollama_client)
-    result, _ = await agent.critique(
-        thought="Some thought",
-        thought_number=1,
-        total_thoughts=1,
-        history_summary="",
-    )
-    assert result.issues == []
-    await ollama_client.aclose()
+
+@pytest.mark.asyncio
+async def test_ollama_cloud_auth_header() -> None:
+    """When OLLAMA_CLOUD_API_KEY is set, Authorization header is sent."""
+    saved = config.ollama_cloud_api_key
+    config.ollama_cloud_api_key = "sk-test-key-for-auth"
+
+    client = OllamaClient()
+
+    try:
+        with respx.mock(base_url="http://localhost:11434") as mock:
+            mock.post("/api/chat").mock(
+                return_value=httpx.Response(200, json=_mock_chat_response(CRITIC_JSON))
+            )
+            agent = CriticAgent(client)
+            result, _ = await agent.critique(
+                thought="Test cloud auth",
+                thought_number=1,
+                total_thoughts=1,
+                history_summary="",
+            )
+            assert len(result.issues) == 1
+            assert mock.calls.last is not None
+            request = mock.calls.last.request
+            assert request.headers.get("Authorization") == "Bearer sk-test-key-for-auth"
+    finally:
+        await client.aclose()
+        config.ollama_cloud_api_key = saved
 
 
 def test_upstream_server_concurrent_thoughts() -> None:

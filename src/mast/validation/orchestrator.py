@@ -1,4 +1,4 @@
-"""Validation orchestrator — assembles Critic + Judge based on mode."""
+"""Validation orchestrator — assembles Critic + Judge or debono pipeline based on mode."""
 
 from __future__ import annotations
 
@@ -9,12 +9,14 @@ import structlog
 from mast._upstream import ThoughtData
 from mast.agents.base import OllamaClient
 from mast.agents.critic import CriticAgent
+from mast.agents.debono import DebonoContext, DebonoOrchestrator
 from mast.agents.judge import JudgeAgent
 from mast.config import config
 from mast.validation.cache import ValidationCache
 from mast.validation.schemas import (
     MastOutput,
     ValidationResult,
+    Verdict,
 )
 
 log = structlog.get_logger(__name__)
@@ -70,9 +72,76 @@ class ValidationOrchestrator:
         self._client = OllamaClient()
         self._critic = CriticAgent(self._client)
         self._judge = JudgeAgent(self._client)
+        self._debono: DebonoOrchestrator | None = None
         self._cache: ValidationCache[MastOutput] = ValidationCache(
             ttl_seconds=config.mast_cache_ttl_s
         )
+
+    async def _run_debono(
+        self,
+        thought: ThoughtData,
+        history_summary: str,
+        critic_model: str | None,
+        judge_model: str | None,
+    ) -> None:
+        if self._debono is None:
+            self._debono = DebonoOrchestrator(self._client)
+        debono_result, blue_close = await self._debono.run(
+            thought=thought.thought,
+            ctx=DebonoContext(
+                thought_number=thought.thought_number,
+                total_thoughts=thought.total_thoughts,
+                history_summary=history_summary,
+                is_revision=thought.is_revision,
+                revises_thought=thought.revises_thought,
+                branch_id=thought.branch_id,
+                branch_from=thought.branch_from_thought,
+            ),
+            primary_model=critic_model,
+            creative_model=judge_model,
+        )
+        self._debono_result = debono_result
+        self._debono_blue_close = blue_close
+
+    async def _run_critic(
+        self,
+        thought: ThoughtData,
+        history_summary: str,
+        effective_critic: str,
+    ) -> None:
+        critic_response, critic_latency = await self._critic.critique(
+            thought=thought.thought,
+            thought_number=thought.thought_number,
+            total_thoughts=thought.total_thoughts,
+            history_summary=history_summary,
+            is_revision=thought.is_revision,
+            revises_thought=thought.revises_thought,
+            branch_id=thought.branch_id,
+            branch_from=thought.branch_from_thought,
+            model=effective_critic,
+        )
+        self._critic_response = critic_response
+        self._critic_latency = critic_latency
+
+    async def _run_judge(
+        self,
+        thought: ThoughtData,
+        history_summary: str,
+        mode: str,
+        effective_judge: str,
+    ) -> None:
+        judge_response, judge_latency = await self._judge.judge(
+            thought=thought.thought,
+            thought_number=thought.thought_number,
+            total_thoughts=thought.total_thoughts,
+            history_summary=history_summary,
+            critique=self._critic_response,
+            mode=mode,
+            is_revision=thought.is_revision,
+            model=effective_judge,
+        )
+        self._judge_response = judge_response
+        self._judge_latency = judge_latency
 
     async def run(
         self,
@@ -122,18 +191,38 @@ class ValidationOrchestrator:
             log.info("validation_cache_hit", trace_id=trace_id)
             return cached
 
+        # --- De Bono mode ---
+        if mode == "debono":
+            await self._run_debono(thought, history_summary, critic_model, judge_model)
+            debono_result = self._debono_result
+            blue_close = self._debono_blue_close
+
+            base.debono = debono_result
+            verdict_raw = blue_close.get("verdict", "accept")
+            try:
+                base.verdict = Verdict(verdict_raw)
+            except ValueError:
+                base.verdict = Verdict.ACCEPT
+            base.confidence = float(blue_close.get("confidence", 0.5))
+            base.suggested_revision = blue_close.get("suggested_revision")
+            base.judge_model = debono_result.hats[-1].model if debono_result.hats else None
+            base.judge_latency_ms = debono_result.total_latency_ms
+
+            log.info(
+                "debono_done",
+                trace_id=trace_id,
+                thought_number=thought.thought_number,
+                hats=len(debono_result.hats),
+                verdict=base.verdict.value if base.verdict else None,
+                total_latency_ms=debono_result.total_latency_ms,
+            )
+            self._cache.set(cache_key, base)
+            return base
+
         # --- Critic ---
-        critic_response, critic_latency = await self._critic.critique(
-            thought=thought.thought,
-            thought_number=thought.thought_number,
-            total_thoughts=thought.total_thoughts,
-            history_summary=history_summary,
-            is_revision=thought.is_revision,
-            revises_thought=thought.revises_thought,
-            branch_id=thought.branch_id,
-            branch_from=thought.branch_from_thought,
-            model=effective_critic,
-        )
+        await self._run_critic(thought, history_summary, effective_critic)
+        critic_response = self._critic_response
+        critic_latency = self._critic_latency
 
         log.info(
             "critic_done",
@@ -157,16 +246,9 @@ class ValidationOrchestrator:
             return base
 
         # --- Judge ---
-        judge_response, judge_latency = await self._judge.judge(
-            thought=thought.thought,
-            thought_number=thought.thought_number,
-            total_thoughts=thought.total_thoughts,
-            history_summary=history_summary,
-            critique=critic_response,
-            mode=mode,
-            is_revision=thought.is_revision,
-            model=effective_judge,
-        )
+        await self._run_judge(thought, history_summary, mode, effective_judge)
+        judge_response = self._judge_response
+        judge_latency = self._judge_latency
 
         log.info(
             "judge_done",
