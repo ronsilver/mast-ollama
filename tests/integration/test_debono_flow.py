@@ -11,7 +11,7 @@ import respx
 
 from mast._upstream import ThoughtData
 from mast.agents.base import OllamaClient
-from mast.agents.debono import DebonoOrchestrator
+from mast.agents.debono import DebonoContext, DebonoOrchestrator
 from mast.validation.orchestrator import ValidationOrchestrator
 from mast.validation.schemas import Verdict
 
@@ -121,9 +121,11 @@ async def test_debono_orchestrator_full_flow(mock_ollama: respx.MockRouter) -> N
     orchestrator = DebonoOrchestrator(client)
     result, blue_close = await orchestrator.run(
         thought="We should implement feature X using caching.",
-        thought_number=1,
-        total_thoughts=5,
-        history_summary="#1: Initial thought",
+        ctx=DebonoContext(
+            thought_number=1,
+            total_thoughts=5,
+            history_summary="#1: Initial thought",
+        ),
     )
 
     assert len(result.hats) == 7
@@ -143,9 +145,11 @@ async def test_debono_orchestrator_with_skip_red(mock_ollama: respx.MockRouter) 
     orchestrator = DebonoOrchestrator(client)
     result, _ = await orchestrator.run(
         thought="Implement feature X.",
-        thought_number=1,
-        total_thoughts=3,
-        history_summary="",
+        ctx=DebonoContext(
+            thought_number=1,
+            total_thoughts=3,
+            history_summary="",
+        ),
         skip_red=True,
     )
 
@@ -163,9 +167,11 @@ async def test_debono_hats_progressive_document(mock_ollama: respx.MockRouter) -
     orchestrator = DebonoOrchestrator(client)
     result, _ = await orchestrator.run(
         thought="Feature X with caching.",
-        thought_number=1,
-        total_thoughts=3,
-        history_summary="",
+        ctx=DebonoContext(
+            thought_number=1,
+            total_thoughts=3,
+            history_summary="",
+        ),
     )
 
     assert len(result.hats) == 7
@@ -180,11 +186,13 @@ async def test_debono_orchestrator_timeout_fallback(mock_ollama: respx.MockRoute
 
     client = OllamaClient()
     orchestrator = DebonoOrchestrator(client)
-    result, blue_close = await orchestrator.run(
+    result, _ = await orchestrator.run(
         thought="Test thought that times out.",
-        thought_number=1,
-        total_thoughts=3,
-        history_summary="",
+        ctx=DebonoContext(
+            thought_number=1,
+            total_thoughts=3,
+            history_summary="",
+        ),
     )
 
     assert len(result.hats) == 7

@@ -73,17 +73,14 @@ _HAT_NUM_PREDICT = {
     HatName.BLUE_CLOSE: 1024,
 }
 
-_DEBONO_FALLBACK: dict[str, str] = {
-    "modified_document": "",
-    "working_document": "",
-    "rationale": "parse_failed",
-}
-
 
 @dataclass
 class DebonoContext:
-    """Optional reasoning metadata for a De Bono pipeline run."""
+    """Immutable reasoning context passed through the De Bono hat pipeline."""
 
+    thought_number: int = 0
+    total_thoughts: int = 0
+    history_summary: str = ""
     is_revision: bool = False
     revises_thought: int | None = None
     branch_id: str | None = None
@@ -168,56 +165,40 @@ class DebonoOrchestrator:
 
         return raw, latency_ms
 
-    async def run(
+    def _build_template_vars(
         self,
         thought: str,
-        thought_number: int,
-        total_thoughts: int,
-        history_summary: str,
-        *,
-        ctx: DebonoContext | None = None,
-        primary_model: str | None = None,
-        creative_model: str | None = None,
-        skip_red: bool | None = None,
-    ) -> tuple[DebonoResult, dict[str, Any]]:
-        """Execute the De Bono Six Hats pipeline sequentially.
+        working_doc: str,
+        ctx: DebonoContext,
+        hats_output: list[HatOutput],
+    ) -> dict[str, Any]:
+        return {
+            "thought": thought,
+            "working_document": working_doc,
+            "thought_number": ctx.thought_number,
+            "total_thoughts": ctx.total_thoughts,
+            "history_summary": ctx.history_summary,
+            "is_revision": ctx.is_revision,
+            "revises_thought": ctx.revises_thought,
+            "branch_id": ctx.branch_id,
+            "branch_from": ctx.branch_from,
+            "hat_contributions": _summarize_contributions(hats_output),
+        }
 
-        Args:
-            thought: The reasoning step to evaluate.
-            thought_number: Current step number in the sequence.
-            total_thoughts: Estimated total steps.
-            history_summary: Summary of previous reasoning steps.
-            ctx: Optional reasoning metadata (revision markers, branch info).
-            primary_model: Override for primary hat models (white, yellow, black, blue).
-            creative_model: Override for creative hat models (green, red).
-            skip_red: If True, omit the Red hat (gut feeling check).
-
-        Returns:
-            Tuple of (DebonoResult with all hat outputs, blue_close raw dict).
-        """
-        if ctx is None:
-            ctx = DebonoContext()
-
-        t_start = time.monotonic()
+    async def _run_pipeline(
+        self,
+        thought: str,
+        ctx: DebonoContext,
+        hat_order: list[HatName],
+        primary_model: str | None,
+        creative_model: str | None,
+    ) -> tuple[list[HatOutput], dict[str, Any]]:
         hats_output: list[HatOutput] = []
         working_doc = ""
-
-        hat_order = self._build_hat_order(skip_red)
         raw: dict[str, Any] = {}
 
         for hat_name in hat_order:
-            template_vars: dict[str, Any] = {
-                "thought": thought,
-                "working_document": working_doc,
-                "thought_number": thought_number,
-                "total_thoughts": total_thoughts,
-                "history_summary": history_summary,
-                "is_revision": ctx.is_revision,
-                "revises_thought": ctx.revises_thought,
-                "branch_id": ctx.branch_id,
-                "branch_from": ctx.branch_from,
-                "hat_contributions": _summarize_contributions(hats_output),
-            }
+            template_vars = self._build_template_vars(thought, working_doc, ctx, hats_output)
 
             raw, latency_ms = await self._run_single_hat(
                 hat_name, working_doc, template_vars, primary_model, creative_model
@@ -236,9 +217,40 @@ class DebonoOrchestrator:
                 )
             )
 
+        return hats_output, raw
+
+    async def run(
+        self,
+        thought: str,
+        ctx: DebonoContext | None = None,
+        *,
+        primary_model: str | None = None,
+        creative_model: str | None = None,
+        skip_red: bool | None = None,
+    ) -> tuple[DebonoResult, dict[str, Any]]:
+        """Execute the De Bono Six Hats pipeline sequentially.
+
+        Args:
+            thought: The reasoning step to evaluate.
+            ctx: Reasoning context (thought number, history, revision markers).
+            primary_model: Override for primary hat models (white, yellow, black, blue).
+            creative_model: Override for creative hat models (green, red).
+            skip_red: If True, omit the Red hat (gut feeling check).
+
+        Returns:
+            Tuple of (DebonoResult with all hat outputs, blue_close raw dict).
+        """
+        if ctx is None:
+            ctx = DebonoContext()
+
+        t_start = time.monotonic()
+        hat_order = self._build_hat_order(skip_red)
+        hats_output, blue_close_raw = await self._run_pipeline(
+            thought, ctx, hat_order, primary_model, creative_model
+        )
         total_latency = int((time.monotonic() - t_start) * 1000)
 
-        blue_close = raw if hat_order[-1] == HatName.BLUE_CLOSE else {}
+        blue_close = blue_close_raw if hat_order[-1] == HatName.BLUE_CLOSE else {}
 
         debono_result = DebonoResult(
             hats=hats_output,

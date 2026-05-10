@@ -131,10 +131,10 @@ class ValidationOrchestrator:
                 self._debono = DebonoOrchestrator(self._client)
             debono_result, blue_close = await self._debono.run(
                 thought=thought.thought,
-                thought_number=thought.thought_number,
-                total_thoughts=thought.total_thoughts,
-                history_summary=history_summary,
                 ctx=DebonoContext(
+                    thought_number=thought.thought_number,
+                    total_thoughts=thought.total_thoughts,
+                    history_summary=history_summary,
                     is_revision=thought.is_revision,
                     revises_thought=thought.revises_thought,
                     branch_id=thought.branch_id,
