@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `prompts/debono/` — 7 prompt templates (blue_open, white, green, yellow, black, red, blue_close)
 - `DEBONO_{HAT}_MODEL` — per-hat model env vars with defaults
 - `DEBONO_SKIP_RED` — toggle to skip Red Hat for technical tasks
+- `OLLAMA_CLOUD_API_KEY` — cloud API key for hosted models
 - `hats/history` — working_document progressive refinement across hats
 - Tests — `test_debono_prompts.py`, `test_debono_parsing.py`, `test_debono_flow.py`
 - Docs — updated README with debono mode, env vars, architecture
@@ -25,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `_mast_debate_tool.py` — schema reflects debono overrides
 - `prompts/` — reorganized into `debate/` and `debono/` subdirs
 - `AGENTS.md` — added De Bono section + coding directives
+- `agents/base.py` — cloud auth header injection
+- `__main__.py` — cloud-aware doctor (detection, model validation)
 
 ## [0.1.0] - 2025-03-27
 

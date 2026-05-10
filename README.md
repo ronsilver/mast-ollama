@@ -16,7 +16,7 @@ The upstream `sequential-thinking` MCP server is passive — it only persists th
 
 ### Prerequisites
 
-- [Ollama](https://ollama.com) running locally
+- [Ollama](https://ollama.com) running locally or an [Ollama Cloud](https://ollama.com/pricing) account
 - Pull the required models for your chosen strategy:
 
 ```bash
@@ -29,7 +29,9 @@ ollama pull qwen2.5:3b
 ollama pull qwen2.5:1.5b
 ```
 
-### Run with uvx
+For Ollama Cloud, see the [Cloud section](#ollama-cloud).
+
+### Run with `uvx`
 
 ```bash
 uvx --from git+https://github.com/ronsilver/mast-ollama.git mast-server
@@ -42,6 +44,74 @@ mast-server --doctor
 ```
 
 Checks Ollama connectivity and validates that all models configured via env vars are pulled and available.
+
+## Ollama Cloud
+
+MAST supports both local Ollama and [Ollama Cloud](https://ollama.com/pricing). Two access modes:
+
+### A) Direct Cloud API (programmatic)
+
+Connect directly to `https://ollama.com/api` with an API key:
+
+```bash
+OLLAMA_BASE_URL=https://ollama.com/api \
+OLLAMA_CLOUD_API_KEY=sk-xxx \
+CRITIC_MODEL=mistral:7b-instruct \
+mast-server
+```
+
+API keys are created at [ollama.com/settings/keys](https://ollama.com/settings/keys).
+
+### B) Local Proxy (after `ollama signin`)
+
+Authenticate locally, then add `-cloud` suffix to model names:
+
+```bash
+ollama signin
+# then use normal OLLAMA_BASE_URL + cloud-tagged model names
+DEBONO_WHITE_MODEL=qwen2.5:3b-cloud mast-server
+```
+
+The local Ollama instance proxies to cloud transparently.
+
+### Plans and concurrency limits
+
+| Plan | Price | Concurrent models |
+|---|---|---|
+| Free | $0 | 1 |
+| Pro | $20/mo | 3 |
+| Max | $100/mo | 10 |
+
+Requests beyond concurrency are queued. See [ollama.com/pricing](https://ollama.com/pricing).
+
+### Cloud configuration examples
+
+**Debate mode:**
+
+```json
+{
+  "env": {
+    "OLLAMA_BASE_URL": "https://ollama.com/api",
+    "OLLAMA_CLOUD_API_KEY": "sk-xxx",
+    "CRITIC_MODEL": "mistral:7b-instruct",
+    "JUDGE_MODEL": "deepseek-r1:8b",
+    "MAST_MODE": "debate"
+  }
+}
+```
+
+**Debono mode:**
+
+```json
+{
+  "env": {
+    "OLLAMA_BASE_URL": "https://ollama.com/api",
+    "OLLAMA_CLOUD_API_KEY": "sk-xxx",
+    "MAST_MODE": "debono",
+    "DEBONO_BLUE_OPEN_MODEL": "qwen2.5:3b"
+  }
+}
+```
 
 ## MCP Client Configuration
 
@@ -148,6 +218,7 @@ Red hat can be disabled entirely by setting `DEBONO_SKIP_RED=true`.
 | Variable | Default | Description |
 |---|---|---|
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server endpoint |
+| `OLLAMA_CLOUD_API_KEY` | — | Ollama Cloud API key for `https://ollama.com/api` |
 | `MAST_MODE` | `debate` | Default validation mode |
 | `MAST_TIMEOUT_MS` | `15000` | Per-call Ollama timeout |
 | `MAST_FORMAT_MODE` | `schema` | Ollama JSON format: `schema`, `json`, or `text` |
