@@ -8,6 +8,11 @@ Available validation strategies:
 
 - **Adversarial Debate** (modes: `validate`, `debate`): a Critic identifies flaws, a Judge synthesizes a verdict
 - **De Bono Six Thinking Hats** (mode: `debono`): 7 sequential hats refine a working document through facts, creativity, benefits, risks, and intuition into a final verdict
+- **Actor-Critic Iterative Refinement** (mode: `actor_critic`): Iterative Critic+Judge loop until convergence
+- **Brainstorm** (mode: `brainstorm`): Parallel idea generators + synthesis
+- **Tree of Thoughts** (mode: `tot`): Parallel branch generation + voting
+- **Kalman Convergence** (mode: `kalman`): Bayesian fusion of quality scores
+- **Workflow** (mode: `workflow`): Chain multiple modes in sequence
 
 ## Table of Contents
 
@@ -174,7 +179,12 @@ The local Ollama instance proxies to cloud transparently.
 | `passive` | Identical to upstream sequential-thinking (passthrough) | 0 ms |
 | `validate` | Critic only — identifies issues + strengths | ~1x critic model |
 | `debate` | Critic + Judge — verdict + suggested revision | ~2x |
-| `debono` | De Bono Six Hats: Blue, White, Green, Yellow, Black, Red, Blue Close — progressive document refinement | ~5s |
+| `debono` | De Bono Six Hats: Blue, White, Green, Yellow, Black, Red, Blue Close | ~5s |
+| `actor_critic` | Iterative Critic+Judge loop up to ACTOR_CRITIC_MAX_ROUNDS | ~2x x rounds |
+| `brainstorm` | N parallel generators + Synthesizer | ~2x x N models |
+| `tot` | N parallel branch generators + Voter | ~2x x N branches |
+| `kalman` | N scorers + Kalman filter fusion | ~1x x N scorers |
+| `workflow` | Pipeline of modes chained in sequence | Sum of stages |
 
 ## Tools
 
@@ -182,14 +192,14 @@ The local Ollama instance proxies to cloud transparently.
 
 Same as upstream sequential-thinking plus optional MAST fields:
 
-- `mode`: `"passive" | "validate" | "debate" | "debono"` — overrides server default for this step
+- `mode`: `"passive" | "validate" | "debate" | "debono" | "actor_critic" | "brainstorm" | "tot" | "kalman" | "workflow"` — overrides server default for this step
 - `skipValidation`: bypass validation for this specific thought
 
 ### `mast_debate` (extended)
 
 Same schema as `sequentialthinking` plus optional model overrides per call:
 
-- `criticModel`, `judgeModel` — override the Critic/Judge models (debate mode)
+- `criticModel`, `judgeModel` — override the Critic/Judge models (debate, actor_critic)
 - `debonoPrimaryModel`, `debonoCreativeModel` — override primary/creative models (debono mode)
 
 When no `mode` is specified, defaults to `debate`. Explicit `mode` from the client is respected.
@@ -251,6 +261,40 @@ Red hat can be disabled entirely by setting `DEBONO_SKIP_RED=true`.
 | `DEBONO_BLUE_CLOSE_MODEL` | `qwen2.5:3b` | Blue Close hat model |
 | `DEBONO_SKIP_RED` | `false` | Skip Red hat entirely |
 
+### Actor-Critic mode
+
+| Variable | Default | Description |
+|---|---|---|
+| `ACTOR_CRITIC_MAX_ROUNDS` | `3` | Maximum iterative refinement rounds |
+
+### Brainstorm mode
+
+| Variable | Default | Description |
+|---|---|---|
+| `BRAINSTORM_MODELS` | `llama3:8b,mistral:7b` | Comma-separated generator models |
+| `BRAINSTORM_SYNTH_MODEL` | `qwen2.5:14b` | Synthesizer model |
+
+### Tree of Thoughts mode
+
+| Variable | Default | Description |
+|---|---|---|
+| `TOT_BRANCH_MODELS` | `llama3:8b,mistral:7b,qwen2.5:7b` | Comma-separated branch generator models |
+| `TOT_VOTER_MODEL` | `deepseek-r1:8b` | Voter model |
+
+### Kalman Convergence mode
+
+| Variable | Default | Description |
+|---|---|---|
+| `KALMAN_SCORER_MODELS` | `mistral:7b,qwen2.5:7b,phi3:mini` | Comma-separated scorer models |
+| `KALMAN_P_THRESHOLD` | `0.05` | Convergence threshold for P (uncertainty) |
+| `KALMAN_ACCEPT_THRESHOLD` | `0.70` | Minimum x to accept |
+
+### Workflow mode
+
+| Variable | Default | Description |
+|---|---|---|
+| `MAST_WORKFLOW_STAGES` | `debate,kalman` | Comma-separated modes to chain |
+
 ## Architecture
 
 ```text
@@ -261,25 +305,23 @@ LLM Client → MCP sequentialthinking tool
               ├── _upstream.py       (1:1 port of lib.ts)
               ├── agents/
               │   ├── base.py        (Ollama HTTP client)
-              │   ├── critic.py      → Ollama (Critic)   [debate mode]
-              │   ├── judge.py       → Ollama (Judge)     [debate mode]
-              │   └── debono.py      → Ollama x7 hats     [debono mode]
+              │   ├── critic.py      → Ollama (Critic)        [debate, actor_critic]
+              │   ├── judge.py       → Ollama (Judge)          [debate, actor_critic]
+              │   ├── debono.py      → Ollama x7 hats          [debono]
+              │   ├── actor_critic.py (iterative loop wrapper) [actor_critic]
+              │   ├── brainstorm.py  → Ollama x N generators   [brainstorm]
+              │   ├── tot.py         → Ollama x N branches     [tot]
+              │   └── kalman.py      → Ollama x N scorers      [kalman]
               ├── validation/
               │   ├── orchestrator.py (mode dispatch)
               │   ├── cache.py       (LRU+TTL cache)
               │   └── schemas.py     (Pydantic models)
               └── prompts/
                   ├── debate/
-                  │   ├── critic.md
-                  │   └── judge.md
-                  └── debono/
-                      ├── blue_open.md
-                      ├── white.md
-                      ├── green.md
-                      ├── yellow.md
-                      ├── black.md
-                      ├── red.md
-                      └── blue_close.md
+                  ├── debono/
+                  ├── brainstorm/
+                  ├── tot/
+                  └── kalman/
 ```
 
 ## Development

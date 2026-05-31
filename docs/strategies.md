@@ -1,6 +1,6 @@
 # Reasoning Strategies
 
-The MAST-Ollama server supports two reasoning strategies. The active strategy is
+The MAST-Ollama server supports seven reasoning strategies. The active strategy is
 selected via the `MAST_MODE` environment variable.
 
 ---
@@ -88,6 +88,11 @@ The process happens in milliseconds, fully transparent to the MCP client.
   - `validate`: Only invokes the Critic (saves tokens/time).
   - `debate`: Invokes Critic + Judge (higher quality, default).
   - `debono`: Invokes the 6 De Bono hats sequentially.
+  - `actor_critic`: Iterative Critic+Judge loop (self-contained, no Propulsor involvement).
+  - `brainstorm`: Parallel idea generators + Synthesizer.
+  - `tot`: Parallel branch generators + Voter.
+  - `kalman`: N scorers + Kalman filter fusion.
+  - `workflow`: Chain multiple modes in sequence.
 - **LRU Cache (Least Recently Used):** Previously evaluated identical thoughts are returned instantly from server memory to avoid redundant Ollama work.
 
 ---
@@ -109,3 +114,136 @@ The process happens in milliseconds, fully transparent to the MCP client.
 Each hat has its own configurable environment variable. The pattern is `DEBONO_{HAT}_MODEL` where `{HAT}` is the uppercase hat name (e.g., `DEBONO_BLUE_OPEN_MODEL`, `DEBONO_RED_MODEL`). Red hat can be disabled entirely via `DEBONO_SKIP_RED=true`.
 
 The pipeline executes sequentially: each hat receives the previous hat's `working_document` as input and returns a `modified_document` for the next step. The final Blue (Close) hat produces a verdict, confidence score, and optional suggested revision.
+
+---
+
+## Strategy 3: Actor-Critic Iterative Refinement (mode: `actor_critic`)
+
+Extends the `debate` flow with an internal loop: the Judge's `suggested_revision` is
+re-injected as a new thought for another round of criticism. The loop terminates when
+the Critic finds no HIGH/MEDIUM issues or the round limit is reached.
+
+| Step | Agent | Responsibility |
+|---|---|---|
+| 1 | Critic | Evaluate current thought, find issues |
+| 2 | Judge (if issues found) | Generate suggested revision |
+| 3 | Loop | Re-inject revision as new thought, repeat |
+
+- **Max rounds:** Controlled by `ACTOR_CRITIC_MAX_ROUNDS` (default: 3)
+- **Verdict:** `accept` when converged (no HIGH/MEDIUM issues), `revise` otherwise
+
+The difference from `debate` is that `actor_critic` iterates internally without
+involving the Propulsor in each round.
+
+---
+
+## Strategy 4: Brainstorm (mode: `brainstorm`)
+
+Multiple Ollama models generate independent ideas in parallel (divergent phase).
+A Synthesizer model merges them into Top-N proposals (convergent phase).
+
+| Phase | Agent | Config |
+|---|---|---|
+| Divergent | N parallel generators | `BRAINSTORM_MODELS` (default: `llama3:8b,mistral:7b`) |
+| Convergent | Synthesizer (single model) | `BRAINSTORM_SYNTH_MODEL` (default: `qwen2.5:14b`) |
+
+- Generators use `temperature=0.85` for high creativity.
+- Synthesizer uses `temperature=0.4` for focused merging.
+- The result includes all ideas plus the synthesized `suggested_revision`.
+
+---
+
+## Strategy 5: Tree of Thoughts — Branch & Vote (mode: `tot`)
+
+N models generate candidates for the "next reasoning step" (branches) in parallel.
+A Voter scores each branch. The highest-scored branch is returned as `suggested_revision`.
+
+| Phase | Agent | Config |
+|---|---|---|
+| Branch | N parallel generators | `TOT_BRANCH_MODELS` (default: `llama3:8b,mistral:7b,qwen2.5:7b`) |
+| Vote | Voter (single model) | `TOT_VOTER_MODEL` (default: `deepseek-r1:8b`) |
+
+- Branch generators use `temperature=0.75`.
+- Voter uses `temperature=0.2` for deterministic scoring.
+- Branches sorted by score descending; top branch is selected.
+
+---
+
+## Strategy 6: Kalman Convergence (mode: `kalman`)
+
+N scorer models evaluate the thought with `{score, confidence}` pairs.
+A Kalman Filter fuses these measurements optimally, weighting inversely to uncertainty.
+
+### Interpretation
+
+| Symbol | Meaning |
+|---|---|
+| `x` | Estimated thought quality ∈ [0,1] |
+| `P` | Uncertainty in that estimate (high initially) |
+| `z_i` | Score from scorer i ∈ [0,1] |
+| `R_i` | `1 - confidence_i` (low R = high certainty) |
+| `innovation` | `abs(z_i - x)` — divergence between scorers |
+
+### Convergence
+
+- When `P < KALMAN_P_THRESHOLD` (default: 0.05), estimate is reliable.
+- If `x >= KALMAN_ACCEPT_THRESHOLD` (default: 0.70): verdict = `accept`
+- Otherwise: verdict = `revise`
+
+### Safety triggers
+
+| Trigger | Meaning |
+|---|---|
+| `K1:high_divergence` | Scorers very inconsistent (P > 0.5) |
+| `K2:covariance_collapse` | Numerical underflow (P tiny) |
+| `K4:large_innovation` | One scorer strongly disagrees |
+| `K5:no_new_information` | Repeated similar scores with high P |
+
+| Scorer | Config |
+|---|---|
+| N parallel scorers | `KALMAN_SCORER_MODELS` (default: `mistral:7b,qwen2.5:7b,phi3:mini`) |
+
+- Scorers use `temperature=0.1` for deterministic scoring.
+- The Kalman filter uses Joseph form for numerical stability.
+
+---
+
+## Strategy 7: Workflow — Multi-Stage Pipelines (mode: `workflow`)
+
+Chains multiple reasoning modes sequentially. Each stage processes the output
+(`suggested_revision`, `final_thought`, or `synthesis`) of the previous stage.
+
+### Configuration
+
+The pipeline is defined by `MAST_WORKFLOW_STAGES` (comma-separated mode names).
+Default: `debate,kalman`.
+
+### Pre-defined workflows
+
+| Name | `MAST_WORKFLOW_STAGES` | Use case |
+|---|---|---|
+| `deep-think` | `actor_critic,kalman` | Iterative refinement + final validation |
+| `creative` | `brainstorm,actor_critic` | Idea generation + refinement |
+| `overanalyze` | `brainstorm,actor_critic,tot,kalman` | Research / critical planning |
+| `architecture` | `brainstorm,tot,actor_critic,kalman` | Design decisions with wide exploration |
+
+A stage that errors does not halt the pipeline — it records the error and passes the
+input thought unchanged to the next stage.
+
+### MCP Config Example
+
+```json
+{
+  "env": {
+    "MAST_MODE": "workflow",
+    "MAST_WORKFLOW_STAGES": "brainstorm,actor_critic,kalman",
+    "BRAINSTORM_MODELS": "llama3:8b,mistral:7b",
+    "BRAINSTORM_SYNTH_MODEL": "qwen2.5:14b",
+    "CRITIC_MODEL": "mistral:7b-instruct",
+    "JUDGE_MODEL": "deepseek-r1:8b",
+    "ACTOR_CRITIC_MAX_ROUNDS": "3",
+    "KALMAN_SCORER_MODELS": "mistral:7b,qwen2.5:7b,phi3:mini",
+    "KALMAN_P_THRESHOLD": "0.08"
+  }
+}
+```
